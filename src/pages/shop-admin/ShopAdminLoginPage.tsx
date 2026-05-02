@@ -1,13 +1,8 @@
-/**
- * FIDELYS — Super Admin Login
- * Authentification avec vérification du rôle super_admin
- */
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
-export default function LoginPage() {
+export default function ShopAdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,26 +15,22 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) throw authError;
 
-      if (error) throw error;
-
-      // Vérifier que l'utilisateur est super_admin
-      const { data: adminCheck, error: adminError } = await supabase
-        .from('super_admins')
-        .select('user_id')
+      const { data: adminRow, error: adminError } = await supabase
+        .from('shop_admins')
+        .select('id, shop_id')
         .eq('user_id', data.user.id)
+        .limit(1)
         .single();
 
-      if (adminError || !adminCheck) {
+      if (adminError || !adminRow) {
         await supabase.auth.signOut();
-        throw new Error('Accès refusé : compte super-admin requis');
+        throw new Error('Accès refusé : aucune boutique associée à ce compte');
       }
 
-      navigate('/super-admin/dashboard');
+      navigate('/shop-admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur de connexion');
     } finally {
@@ -52,16 +43,13 @@ export default function LoginPage() {
       <div className="w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="Fidelys" className="h-12 mx-auto mb-4 object-contain" />
-          <p className="text-text-muted text-sm mt-1">Super Admin Panel</p>
+          <p className="text-text-muted text-sm mt-1">Espace Gérant</p>
         </div>
 
-        {/* Formulaire */}
         <div className="glass rounded-2xl p-8 animate-slide-up">
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-text-muted mb-2">
-                Email
-              </label>
+              <label htmlFor="email" className="block text-sm font-medium text-text-muted mb-2">Email</label>
               <input
                 id="email"
                 type="email"
@@ -70,14 +58,11 @@ export default function LoginPage() {
                 required
                 className="w-full px-4 py-3 rounded-xl bg-bg-surface border border-border text-text focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
                 style={{ fontSize: 16 }}
-                placeholder="admin@fidelys.app"
+                placeholder="gerant@boutique.com"
               />
             </div>
-
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-text-muted mb-2">
-                Mot de passe
-              </label>
+              <label htmlFor="password" className="block text-sm font-medium text-text-muted mb-2">Mot de passe</label>
               <input
                 id="password"
                 type="password"
@@ -89,13 +74,9 @@ export default function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
-
             {error && (
-              <div className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">
-                {error}
-              </div>
+              <div className="p-3 rounded-lg bg-error/10 border border-error/20 text-error text-sm">{error}</div>
             )}
-
             <button
               type="submit"
               disabled={loading}
@@ -106,9 +87,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-text-muted text-xs mt-6">
-          Réservé aux administrateurs système
-        </p>
+        <p className="text-center text-text-muted text-xs mt-6">Réservé aux gérants de boutique</p>
       </div>
     </div>
   );

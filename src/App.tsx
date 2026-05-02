@@ -1,54 +1,69 @@
-/**
- * FIDELYS — App.tsx
- * Point d'entrée principal avec :
- * - AuthProvider wraps tout
- * - ProtectedRoute sur routes admin (super_admin / shop_admin)
- * - ShopProvider sur routes shop-admin (mode admin) et client (mode slug)
- */
-
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ShopProvider } from './contexts/ShopContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
-
-// Super Admin
-import SuperAdminLayout from './pages/super-admin/SuperAdminLayout';
-import LoginPage from './pages/super-admin/LoginPage';
-import DashboardPage from './pages/super-admin/DashboardPage';
-import ShopsListPage from './pages/super-admin/ShopsListPage';
-import GroupsPage from './pages/super-admin/GroupsPage';
-import GroupDetailPage from './pages/super-admin/GroupDetailPage';
-import CreateShopPage from './pages/super-admin/CreateShopPage';
-import ShopDetailPage from './pages/super-admin/ShopDetailPage';
-
-// Shop Admin
-import ShopAdminLoginPage from './pages/shop-admin/ShopAdminLoginPage';
-import ShopAdminLayout from './pages/shop-admin/ShopAdminLayout';
-import ShopAdminDashboardPage from './pages/shop-admin/ShopAdminDashboardPage';
-import CustomersListPage from './pages/shop-admin/CustomersListPage';
-import CustomerDetailPage from './pages/shop-admin/CustomerDetailPage';
-import CampaignsPage from './pages/shop-admin/CampaignsPage';
-import BrandingSettingsPage from './pages/shop-admin/BrandingSettingsPage';
-import ProgramSettingsPage from './pages/shop-admin/ProgramSettingsPage';
-
-// Client PWA
-import ClientLayout from './pages/client/ClientLayout';
-import CardPage from './pages/client/CardPage';
-import HistoryPage from './pages/client/HistoryPage';
-import QRPage from './pages/client/QRPage';
-
-// Landing & UI
-import LandingPage from './pages/LandingPage';
 import { ToastContainer } from './components/ui';
 
-// ============================================
-// Wrapper components pour injecter les providers contextuels
-// ============================================
+// ── Lazy-loaded pages (code-split by route) ───────────────────────────────────
 
-/**
- * Wrapper Shop-Admin : ShopProvider en mode 'admin'
- * Charge la boutique depuis shop_admins → shops selon le user connecté
- */
+// Landing
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+
+// Super Admin
+const LoginPage          = lazy(() => import('./pages/super-admin/LoginPage'));
+const SuperAdminLayout   = lazy(() => import('./pages/super-admin/SuperAdminLayout'));
+const DashboardPage      = lazy(() => import('./pages/super-admin/DashboardPage'));
+const ShopsListPage      = lazy(() => import('./pages/super-admin/ShopsListPage'));
+const GroupsPage         = lazy(() => import('./pages/super-admin/GroupsPage'));
+const GroupDetailPage    = lazy(() => import('./pages/super-admin/GroupDetailPage'));
+const CreateShopPage     = lazy(() => import('./pages/super-admin/CreateShopPage'));
+const ShopDetailPage     = lazy(() => import('./pages/super-admin/ShopDetailPage'));
+
+// Shop Admin
+const ShopAdminLoginPage     = lazy(() => import('./pages/shop-admin/ShopAdminLoginPage'));
+const ShopAdminLayout        = lazy(() => import('./pages/shop-admin/ShopAdminLayout'));
+const ShopAdminDashboardPage = lazy(() => import('./pages/shop-admin/ShopAdminDashboardPage'));
+const CustomersListPage      = lazy(() => import('./pages/shop-admin/CustomersListPage'));
+const CustomerDetailPage     = lazy(() => import('./pages/shop-admin/CustomerDetailPage'));
+const CampaignsPage          = lazy(() => import('./pages/shop-admin/CampaignsPage'));
+const BrandingSettingsPage   = lazy(() => import('./pages/shop-admin/BrandingSettingsPage'));
+const ProgramSettingsPage    = lazy(() => import('./pages/shop-admin/ProgramSettingsPage'));
+
+// Client PWA
+const ClientLayout = lazy(() => import('./pages/client/ClientLayout'));
+const CardPage     = lazy(() => import('./pages/client/CardPage'));
+const HistoryPage  = lazy(() => import('./pages/client/HistoryPage'));
+const QRPage       = lazy(() => import('./pages/client/QRPage'));
+
+// ── Loading fallback ──────────────────────────────────────────────────────────
+
+function PageLoader() {
+  return (
+    <div style={{
+      minHeight:      '100dvh',
+      display:        'flex',
+      alignItems:     'center',
+      justifyContent: 'center',
+      background:     '#0C1810',
+    }}>
+      <style>{`
+        @keyframes _spin { to { transform: rotate(360deg); } }
+      `}</style>
+      <div style={{
+        width:       36,
+        height:      36,
+        borderRadius:'50%',
+        border:      '3px solid rgba(11,123,92,0.2)',
+        borderTopColor: '#0B7B5C',
+        animation:   '_spin 0.75s linear infinite',
+      }} />
+    </div>
+  );
+}
+
+// ── Context wrappers ──────────────────────────────────────────────────────────
+
 function ShopAdminWithProvider() {
   return (
     <ShopProvider mode="admin">
@@ -57,10 +72,6 @@ function ShopAdminWithProvider() {
   );
 }
 
-/**
- * Wrapper Client PWA : ShopProvider en mode 'slug'
- * Extrait le slug de l'URL et charge la boutique correspondante
- */
 function ClientWithProvider() {
   const { slug } = useParams<{ slug: string }>();
   return (
@@ -70,100 +81,88 @@ function ClientWithProvider() {
   );
 }
 
+// ── 404 ───────────────────────────────────────────────────────────────────────
+
 function NotFound() {
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0C1810' }}>
-      <div className="text-center">
-        <h1
-          className="text-6xl font-bold mb-4"
-          style={{
-            color: '#0B7B5C',
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            letterSpacing: '-2px',
-          }}
-        >
+    <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0C1810' }}>
+      <div style={{ textAlign:'center' }}>
+        <h1 style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:72, fontWeight:800, color:'#0B7B5C', letterSpacing:'-3px', lineHeight:1 }}>
           404
         </h1>
-        <p
-          className="text-lg"
-          style={{
-            color: '#8EA598',
-            fontFamily: "'Outfit', sans-serif",
-          }}
-        >
+        <p style={{ fontFamily:"'Outfit',sans-serif", fontSize:16, color:'#8EA598', marginTop:12 }}>
           Page introuvable
         </p>
+        <a href="/" style={{ display:'inline-block', marginTop:24, fontSize:14, color:'#13A87D', fontFamily:"'Outfit',sans-serif", textDecoration:'none' }}>
+          ← Retour à l'accueil
+        </a>
       </div>
     </div>
   );
 }
 
-// ============================================
-// App principal
-// ============================================
+// ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Accueil */}
-          <Route path="/" element={<LandingPage />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
 
-          {/* ────────────────────────────────── */}
-          {/* Super Admin                        */}
-          {/* ────────────────────────────────── */}
-          <Route path="/super-admin/login" element={<LoginPage />} />
-          <Route
-            path="/super-admin"
-            element={
-              <ProtectedRoute requiredRole="super_admin">
-                <SuperAdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardPage />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="boutiques" element={<ShopsListPage />} />
-            <Route path="boutiques/nouvelle" element={<CreateShopPage />} />
-            <Route path="boutiques/:shopId" element={<ShopDetailPage />} />
-            <Route path="groupes" element={<GroupsPage />} />
-            <Route path="groupes/:groupId" element={<GroupDetailPage />} />
-          </Route>
+            {/* Landing */}
+            <Route path="/" element={<LandingPage />} />
 
-          {/* ────────────────────────────────── */}
-          {/* Shop Admin                         */}
-          {/* ────────────────────────────────── */}
-          <Route path="/shop-admin/login" element={<ShopAdminLoginPage />} />
-          <Route
-            path="/shop-admin"
-            element={
-              <ProtectedRoute requiredRole="shop_admin">
-                <ShopAdminWithProvider />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<ShopAdminDashboardPage />} />
-            <Route path="dashboard" element={<ShopAdminDashboardPage />} />
-            <Route path="clients" element={<CustomersListPage />} />
-            <Route path="clients/:customerId" element={<CustomerDetailPage />} />
-            <Route path="campagnes" element={<CampaignsPage />} />
-            <Route path="personnalisation" element={<BrandingSettingsPage />} />
-            <Route path="programme" element={<ProgramSettingsPage />} />
-          </Route>
+            {/* Super Admin */}
+            <Route path="/super-admin/login" element={<LoginPage />} />
+            <Route
+              path="/super-admin"
+              element={
+                <ProtectedRoute requiredRole="super_admin">
+                  <SuperAdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="boutiques" element={<ShopsListPage />} />
+              <Route path="boutiques/nouvelle" element={<CreateShopPage />} />
+              <Route path="boutiques/:shopId" element={<ShopDetailPage />} />
+              <Route path="groupes" element={<GroupsPage />} />
+              <Route path="groupes/:groupId" element={<GroupDetailPage />} />
+            </Route>
 
-          {/* ────────────────────────────────── */}
-          {/* Client PWA — /client/:slug/c/:cid  */}
-          {/* ────────────────────────────────── */}
-          <Route path="/client/:slug/c/:customerId" element={<ClientWithProvider />}>
-            <Route index element={<CardPage />} />
-            <Route path="history" element={<HistoryPage />} />
-            <Route path="qr" element={<QRPage />} />
-          </Route>
+            {/* Shop Admin */}
+            <Route path="/shop-admin/login" element={<ShopAdminLoginPage />} />
+            <Route
+              path="/shop-admin"
+              element={
+                <ProtectedRoute requiredRole="shop_admin">
+                  <ShopAdminWithProvider />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<ShopAdminDashboardPage />} />
+              <Route path="dashboard" element={<ShopAdminDashboardPage />} />
+              <Route path="clients" element={<CustomersListPage />} />
+              <Route path="clients/:customerId" element={<CustomerDetailPage />} />
+              <Route path="campagnes" element={<CampaignsPage />} />
+              <Route path="personnalisation" element={<BrandingSettingsPage />} />
+              <Route path="programme" element={<ProgramSettingsPage />} />
+            </Route>
 
-          {/* 404 */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+            {/* Client PWA */}
+            <Route path="/client/:slug/c/:customerId" element={<ClientWithProvider />}>
+              <Route index element={<CardPage />} />
+              <Route path="history" element={<HistoryPage />} />
+              <Route path="qr" element={<QRPage />} />
+            </Route>
+
+            {/* 404 */}
+            <Route path="*" element={<NotFound />} />
+
+          </Routes>
+        </Suspense>
         <ToastContainer />
       </AuthProvider>
     </BrowserRouter>

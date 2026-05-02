@@ -4,6 +4,9 @@
  * À compléter dans les phases suivantes
  */
 
+// Auth guards
+export { ProtectedRoute, SuperAdminRoute, ShopAdminRoute } from './ProtectedRoute';
+
 // Phase 5 : Notifications push
 export { PushNotificationPrompt } from './PushNotificationPrompt';
 

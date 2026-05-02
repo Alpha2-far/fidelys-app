@@ -1,11 +1,11 @@
 /**
  * FIDELYS — Database Types
- * Types TypeScript correspondant au schéma PostgreSQL Supabase
- * Généré manuellement pour Phase 1 — à remplacer par supabase gen types plus tard
+ * Types TypeScript miroir exact du schéma PostgreSQL (schema.sql)
+ * Aucun type 'any' — strictement typé
  */
 
 // ============================================
-// Enums
+// Enums (CHECK constraints du schema.sql)
 // ============================================
 
 export type ShopAdminRole = 'owner' | 'manager' | 'vendor';
@@ -16,25 +16,24 @@ export type NotificationStatus = 'pending' | 'sent' | 'failed';
 
 export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled';
 
-export type SubscriptionStatus = 'active' | 'trial' | 'expired' | 'suspended';
+export type SubscriptionStatus = 'active' | 'trial' | 'expired' | 'suspended' | 'cancelled';
 
 // ============================================
-// Table Types
+// Row Types (SELECT result from each table)
 // ============================================
 
-/** Groupe de boutiques (chaînes / franchises) */
+/** shop_groups — Groupes de boutiques (chaînes/franchises) */
 export interface ShopGroup {
   id: string;
   name: string;
   logo_url: string | null;
   primary_color: string | null;
   owner_user_id: string;
-  /** true = les points sont partagés entre boutiques du groupe */
   share_points: boolean;
   created_at: string;
 }
 
-/** Boutique individuelle */
+/** shops — Boutiques individuelles */
 export interface Shop {
   id: string;
   slug: string;
@@ -43,20 +42,17 @@ export interface Shop {
   primary_color: string | null;
   secondary_color: string | null;
   welcome_message: string | null;
-  /** Montant en FCFA pour 1 point (défaut: 500) */
   currency_per_point: number;
-  /** Durée de validité des points en jours (null = illimité) */
   points_validity_days: number | null;
   address: string | null;
   phone: string | null;
-  /** Lien vers le groupe (null = boutique indépendante) */
   group_id: string | null;
   subscription_status: SubscriptionStatus;
   subscription_started_at: string | null;
   created_at: string;
 }
 
-/** Administrateur d'une boutique */
+/** shop_admins — Liaison utilisateurs ↔ boutiques */
 export interface ShopAdmin {
   id: string;
   shop_id: string;
@@ -65,7 +61,7 @@ export interface ShopAdmin {
   created_at: string;
 }
 
-/** Profil client unifié (cross-boutiques, identifié par téléphone) */
+/** customer_profiles — Profil unifié cross-boutiques (par téléphone) */
 export interface CustomerProfile {
   id: string;
   phone: string;
@@ -76,7 +72,7 @@ export interface CustomerProfile {
   created_at: string;
 }
 
-/** Client d'une boutique spécifique */
+/** customers — Clients par boutique */
 export interface Customer {
   id: string;
   shop_id: string;
@@ -92,7 +88,7 @@ export interface Customer {
   last_visit_at: string | null;
 }
 
-/** Palier de récompense */
+/** reward_tiers — Paliers de récompense */
 export interface RewardTier {
   id: string;
   shop_id: string;
@@ -104,7 +100,7 @@ export interface RewardTier {
   sort_order: number;
 }
 
-/** Transaction de points */
+/** points_transactions — Historique des transactions de points */
 export interface PointsTransaction {
   id: string;
   shop_id: string;
@@ -117,7 +113,7 @@ export interface PointsTransaction {
   created_at: string;
 }
 
-/** Notification */
+/** notifications — Historique des notifications */
 export interface Notification {
   id: string;
   shop_id: string;
@@ -128,9 +124,10 @@ export interface Notification {
   status: NotificationStatus;
   scheduled_at: string | null;
   sent_at: string | null;
+  created_at: string;
 }
 
-/** Campagne promotionnelle */
+/** campaigns — Campagnes promotionnelles */
 export interface Campaign {
   id: string;
   shop_id: string;
@@ -139,19 +136,20 @@ export interface Campaign {
   message: string;
   target_segment: string;
   scheduled_at: string | null;
+  sent_at: string | null;
   sent_count: number;
   status: CampaignStatus;
   created_by: string;
   created_at: string;
 }
 
-/** Super admin (accès total) */
+/** super_admins — Accès total pour les super-admins */
 export interface SuperAdmin {
   user_id: string;
 }
 
 // ============================================
-// Database schema type (Supabase-compatible)
+// Database schema type (Supabase client generic)
 // ============================================
 
 export interface Database {
@@ -161,20 +159,22 @@ export interface Database {
         Row: ShopGroup;
         Insert: {
           name: string;
+          owner_user_id: string;
+          id?: string;
           logo_url?: string | null;
           primary_color?: string | null;
-          owner_user_id: string;
           share_points?: boolean;
-          id?: string;
           created_at?: string;
         };
         Update: Partial<ShopGroup>;
+        Relationships: [];
       };
       shops: {
         Row: Shop;
         Insert: {
-          name: string;
           slug: string;
+          name: string;
+          id?: string;
           logo_url?: string | null;
           primary_color?: string | null;
           secondary_color?: string | null;
@@ -186,52 +186,55 @@ export interface Database {
           group_id?: string | null;
           subscription_status?: SubscriptionStatus;
           subscription_started_at?: string | null;
-          id?: string;
           created_at?: string;
         };
         Update: Partial<Shop>;
+        Relationships: [];
       };
       shop_admins: {
         Row: ShopAdmin;
         Insert: {
           shop_id: string;
           user_id: string;
-          role?: ShopAdminRole;
           id?: string;
+          role?: ShopAdminRole;
           created_at?: string;
         };
         Update: Partial<ShopAdmin>;
+        Relationships: [];
       };
       customer_profiles: {
         Row: CustomerProfile;
         Insert: {
           phone: string;
+          id?: string;
           first_name?: string | null;
           last_name?: string | null;
           email?: string | null;
           birthday?: string | null;
-          id?: string;
           created_at?: string;
         };
         Update: Partial<CustomerProfile>;
+        Relationships: [];
       };
       customers: {
         Row: Customer;
         Insert: {
           shop_id: string;
+          phone: string;
+          id?: string;
           profile_id?: string | null;
           first_name?: string | null;
           last_name?: string | null;
-          phone: string;
           total_points?: number;
           lifetime_points?: number;
           push_subscription?: Record<string, unknown> | null;
           current_tier_id?: string | null;
-          id?: string;
           created_at?: string;
           last_visit_at?: string | null;
         };
         Update: Partial<Customer>;
+        Relationships: [];
       };
       reward_tiers: {
         Row: RewardTier;
@@ -239,13 +242,14 @@ export interface Database {
           shop_id: string;
           name: string;
           points_required: number;
-          reward_description?: string;
+          reward_description: string;
+          id?: string;
           reward_value?: string | null;
           active?: boolean;
           sort_order?: number;
-          id?: string;
         };
         Update: Partial<RewardTier>;
+        Relationships: [];
       };
       points_transactions: {
         Row: PointsTransaction;
@@ -254,28 +258,31 @@ export interface Database {
           customer_id: string;
           type: TransactionType;
           points: number;
-          purchase_amount?: number | null;
-          note?: string | null;
           created_by: string;
           id?: string;
+          purchase_amount?: number | null;
+          note?: string | null;
           created_at?: string;
         };
         Update: Partial<PointsTransaction>;
+        Relationships: [];
       };
       notifications: {
         Row: Notification;
         Insert: {
           shop_id: string;
-          customer_id?: string | null;
           type: string;
           title: string;
           message: string;
-          status?: NotificationStatus;
           id?: string;
+          customer_id?: string | null;
+          status?: NotificationStatus;
           scheduled_at?: string | null;
           sent_at?: string | null;
+          created_at?: string;
         };
         Update: Partial<Notification>;
+        Relationships: [];
       };
       campaigns: {
         Row: Campaign;
@@ -285,20 +292,27 @@ export interface Database {
           title: string;
           message: string;
           target_segment: string;
-          scheduled_at?: string | null;
-          sent_count?: number;
-          status?: CampaignStatus;
           created_by: string;
           id?: string;
+          scheduled_at?: string | null;
+          sent_at?: string | null;
+          sent_count?: number;
+          status?: CampaignStatus;
           created_at?: string;
         };
         Update: Partial<Campaign>;
+        Relationships: [];
       };
       super_admins: {
         Row: SuperAdmin;
         Insert: { user_id: string };
         Update: Partial<SuperAdmin>;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }

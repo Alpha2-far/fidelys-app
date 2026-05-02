@@ -317,7 +317,6 @@ function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: stri
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const statsReveal = useReveal(0.2);
 

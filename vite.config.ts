@@ -30,6 +30,9 @@ export default defineConfig({
           if (id.includes('node_modules/qrcode')) {
             return 'vendor-qr';
           }
+          if (id.includes('node_modules/@phosphor-icons')) {
+            return 'vendor-icons';
+          }
         },
       },
     },

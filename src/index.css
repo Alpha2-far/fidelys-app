@@ -1,60 +1,89 @@
 @import "tailwindcss";
 
 /* ============================================
-   FIDELYS — Design System / Custom Theme
-   Palette personnalisée pour Afrique de l'Ouest
+   FIDELYS — Design System (brand.md compliant)
+   Palette: Émeraude · Or · Corail · Crème
+   Typo: Plus Jakarta Sans (titres) + Outfit (corps)
    ============================================ */
 
 @theme {
-  /* ── Background colors ── */
-  --color-bg-dark: #0F0F14;
-  --color-bg-surface: #1A1A24;
-  --color-bg-elevated: #242432;
+  /* ── Primary (Vert émeraude) ── */
+  --color-primary: #0B7B5C;
+  --color-primary-dark: #075C44;
+  --color-primary-light: #13A87D;
+  --color-primary-pale: #E6F5F0;
 
-  /* ── Primary (Gold) ── */
-  --color-primary: #D4A843;
-  --color-primary-light: #E8C87A;
-  --color-primary-dark: #B8922F;
+  /* ── Secondary (Or) ── */
+  --color-secondary: #D4922A;
+  --color-secondary-dark: #A8711A;
+  --color-secondary-light: #EDB84A;
+  --color-secondary-pale: #FDF4E3;
 
-  /* ── Status colors ── */
-  --color-success: #34D399;
-  --color-error: #EF4444;
-  --color-warning: #FBBF24;
-  --color-info: #60A5FA;
+  /* ── Accent (Corail) ── */
+  --color-accent: #E05C38;
+  --color-accent-dark: #B8411F;
+  --color-accent-light: #F58265;
+  --color-accent-pale: #FEF0EB;
 
-  /* ── Text colors ── */
+  /* ── Dark mode (Dashboard Admin) ── */
+  --color-dark-950: #0C1810;
+  --color-dark-900: #132317;
+  --color-dark-800: #1A3020;
+  --color-dark-700: #2B4D36;
+
+  /* ── Light mode backgrounds (PWA Client) ── */
+  --color-bg-base: #F8F5EE;
+  --color-bg-card: #FFFFFF;
+  --color-bg-subtle: #EDE9DF;
+
+  /* ── Legacy aliases for admin (dark = dark-950, surface = dark-800, elevated = dark-700) ── */
+  --color-bg-dark: #0C1810;
+  --color-bg-surface: #1A3020;
+  --color-bg-elevated: #2B4D36;
+
+  /* ── Textes ── */
   --color-text: #F5F5F5;
-  --color-text-muted: #9CA3AF;
-  --color-text-dim: #6B7280;
+  --color-text-dark: #0C1810;
+  --color-text-mid: #3D5248;
+  --color-text-light: #8EA598;
+  --color-text-muted: #8EA598;
+  --color-text-dim: #5A7A68;
 
-  /* ── Border ── */
-  --color-border: #2D2D3D;
-  --color-border-light: #3D3D50;
+  /* ── Bordures ── */
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-light: rgba(255, 255, 255, 0.12);
 
-  /* ── Font families ── */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Outfit', 'Inter', system-ui, sans-serif;
+  /* ── Sémantiques ── */
+  --color-success: #22A05A;
+  --color-error: #D63C3C;
+  --color-warning: #D4922A;
+  --color-info: #2A7DD4;
 
-  /* ── Container max-widths (fixes max-w-sm/md/lg/xl/2xl utilities) ── */
+  /* ── Typographies (brand: Plus Jakarta Sans + Outfit) ── */
+  --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Outfit', system-ui, sans-serif;
+
+  /* ── Container max-widths ── */
   --container-sm: 24rem;
   --container-md: 28rem;
   --container-lg: 32rem;
   --container-xl: 36rem;
   --container-2xl: 42rem;
 
-  /* ── Border radius ── */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.5rem;
+  /* ── Border radius (brand tokens) ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
   --radius-full: 9999px;
 
-  /* ── Shadows ── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(212, 168, 67, 0.15);
+  /* ── Shadows (teintées vert émeraude — brand.md) ── */
+  --shadow-sm: 0 1px 3px rgba(11, 123, 92, 0.08);
+  --shadow-md: 0 4px 16px rgba(11, 123, 92, 0.12);
+  --shadow-lg: 0 8px 32px rgba(11, 123, 92, 0.18);
+  --shadow-xl: 0 20px 60px rgba(11, 123, 92, 0.22);
+  --shadow-gold: 0 4px 16px rgba(212, 146, 42, 0.15);
 
   /* ── Transitions ── */
   --transition-fast: 150ms ease;
@@ -84,22 +113,22 @@ body {
   min-height: 100dvh;
 }
 
-/* ── Scrollbar (dark theme) ── */
+/* ── Scrollbar (dark emerald) ── */
 ::-webkit-scrollbar {
   width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-dark);
+  background: var(--color-dark-950);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--color-dark-700);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-border-light);
+  background: var(--color-primary-dark);
 }
 
 /* ── Focus ring utility ── */
@@ -112,26 +141,59 @@ body {
   outline-offset: 2px;
 }
 
-/* ── Glass morphism utility ── */
+/* ── Glass morphism utility (dark emerald tint) ── */
 .glass {
-  background: rgba(26, 26, 36, 0.7);
+  background: rgba(26, 48, 32, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ── Emerald gradient (primary) ── */
+.gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
 }
 
 /* ── Gold gradient ── */
 .gradient-gold {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-secondary-light));
+}
+
+/* ── Coral gradient ── */
+.gradient-accent {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-light));
+}
+
+/* ── Input base class for forms ── */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  transition: border-color var(--transition-fast);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(11, 123, 92, 0.15);
+}
+
+.input::placeholder {
+  color: var(--color-text-dim);
 }
 
 /* ── Skeleton loading ── */
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--color-bg-surface) 0%,
-    var(--color-bg-elevated) 50%,
-    var(--color-bg-surface) 100%
+    var(--color-dark-800) 0%,
+    var(--color-dark-700) 50%,
+    var(--color-dark-800) 100%
   );
   background-size: 200% 100%;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
@@ -162,12 +224,25 @@ body {
   animation: slide-up 0.4s ease-out forwards;
 }
 
-/* ── Pulse glow for gold elements ── */
+/* ── Pulse glow for gold/emerald elements ── */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 5px rgba(212, 168, 67, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(212, 168, 67, 0.4); }
+  0%, 100% { box-shadow: 0 0 5px rgba(11, 123, 92, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(11, 123, 92, 0.4); }
 }
 
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* ── CTA hover micro-interaction (brand.md § micro-interactions) ── */
+.btn-cta {
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.btn-cta:hover {
+  transform: scale(1.02);
+}
+
+.btn-cta:active {
+  transform: scale(0.98);
 }
