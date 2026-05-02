@@ -1,0 +1,21 @@
+{
+  "name": "Fidelys — Carte de fidélité digitale",
+  "short_name": "Fidelys",
+  "description": "Plateforme de fidélité digitale pour boutiques d'Afrique de l'Ouest",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F0F14",
+  "theme_color": "#0F0F14",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "lifestyle"],
+  "lang": "fr",
+  "dir": "ltr"
+}
