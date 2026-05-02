@@ -1,92 +1,137 @@
 /**
  * FIDELYS — Service Worker
- * Gestion des notifications push et cache PWA
+ * Stratégie : Network First pour les données, Cache First pour les assets statiques
  */
 
-const CACHE_NAME = 'fidelys-v1';
+const CACHE_NAME = 'fidelys-v2';
+
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/favicon.svg',
 ];
 
-// Installation du service worker
+// ── Installation ──────────────────────────────────────────────────────────────
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
 });
 
-// Activation du service worker
+// ── Activation ────────────────────────────────────────────────────────────────
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      );
-    })
+    caches.keys().then((names) =>
+      Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+    )
   );
   self.clients.claim();
 });
 
-// Gestion des requêtes réseau
+// ── Fetch ─────────────────────────────────────────────────────────────────────
+
 self.addEventListener('fetch', (event) => {
-  // Ignorer les requêtes non-GET
-  if (event.request.method !== 'GET') {
+  if (event.request.method !== 'GET') return;
+
+  const url = event.request.url;
+
+  // Ignorer les requêtes cross-origin non-Supabase
+  if (!url.startsWith(self.location.origin) && !url.includes('supabase.co')) return;
+
+  // Requêtes API Supabase → Network First, fallback cache
+  if (url.includes('supabase.co') || url.includes('/rest/v1/') || url.includes('/auth/v1/')) {
+    event.respondWith(networkFirst(event.request));
     return;
   }
 
-  // Ignorer les requêtes vers d'autres origines
-  if (!event.request.url.startsWith(self.location.origin)) {
+  // Assets statiques (JS, CSS, fonts, images) → Cache First
+  const dest = event.request.destination;
+  if (dest === 'script' || dest === 'style' || dest === 'image' || dest === 'font') {
+    event.respondWith(cacheFirst(event.request));
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        // Mettre à jour le cache si la réponse est valide
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return networkResponse;
-      }).catch(() => {
-        // Retourner la version cachée en cas d'erreur
-        return cachedResponse;
-      });
+  // Navigation (HTML) → Network First, fallback vers /index.html pour SPA
+  if (event.request.mode === 'navigate') {
+    event.respondWith(networkFirstSPA(event.request));
+    return;
+  }
 
-      // Retourner le cache en premier, puis mettre à jour
-      return cachedResponse || fetchPromise;
-    })
-  );
+  // Tout le reste → Network First
+  event.respondWith(networkFirst(event.request));
 });
 
-// Gestion des notifications push
+// ── Stratégies de cache ───────────────────────────────────────────────────────
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    return cached || new Response('{"error":"offline"}', {
+      headers: { 'Content-Type': 'application/json' },
+      status: 503,
+    });
+  }
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return new Response('', { status: 404 });
+  }
+}
+
+async function networkFirstSPA(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    // Fallback vers index.html pour les routes SPA en mode hors-ligne
+    const cached = await caches.match(request) || await caches.match('/');
+    return cached || new Response('Hors ligne', { status: 503 });
+  }
+}
+
+// ── Notifications push ────────────────────────────────────────────────────────
+
 self.addEventListener('push', (event) => {
   let data = {};
 
   if (event.data) {
     try {
       data = event.data.json();
-    } catch (e) {
-      data = {
-        title: 'Fidelys',
-        body: event.data.text(),
-      };
+    } catch {
+      data = { title: 'Fidelys', body: event.data.text() };
     }
   }
 
   const title = data.title || 'Nouvelle notification';
   const options = {
     body: data.body || 'Vous avez une nouvelle notification',
-    icon: '/icons.svg',
+    icon: '/favicon.svg',
     badge: '/favicon.svg',
     vibrate: [100, 50, 100],
     data: {
@@ -94,41 +139,23 @@ self.addEventListener('push', (event) => {
       type: data.data?.type,
       shop_id: data.data?.shop_id,
       customer_id: data.data?.customer_id,
-      dateOfCreation: Date.now(),
     },
-    actions: [
-      {
-        action: 'open',
-        title: 'Voir',
-      },
-    ],
+    actions: [{ action: 'open', title: 'Voir' }],
   };
 
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Gestion du clic sur une notification
+// ── Clic notification ─────────────────────────────────────────────────────────
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
   const urlToOpen = event.notification.data?.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Vérifier si une fenêtre de la même boutique est déjà ouverte
-      const matchingClient = windowClients.find((client) => {
-        return client.url.includes(urlToOpen);
-      });
-
-      if (matchingClient) {
-        // Focus sur la fenêtre existante
-        return matchingClient.focus();
-      }
-
-      // Ouvrir une nouvelle fenêtre
-      return clients.openWindow(urlToOpen);
+      const match = windowClients.find((c) => c.url.includes(urlToOpen));
+      return match ? match.focus() : clients.openWindow(urlToOpen);
     })
   );
 });
