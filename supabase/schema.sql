@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.shops (
   phone                 TEXT,
   group_id              UUID REFERENCES public.shop_groups(id) ON DELETE SET NULL,
   subscription_status   TEXT NOT NULL DEFAULT 'active'
-    CHECK (subscription_status IN ('active', 'trial', 'expired', 'suspended')),
+    CHECK (subscription_status IN ('active', 'trial', 'expired', 'suspended', 'cancelled')),
   subscription_started_at TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -195,7 +195,8 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   status        TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'sent', 'failed')),
   scheduled_at  TIMESTAMPTZ,
-  sent_at       TIMESTAMPTZ
+  sent_at       TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
@@ -216,6 +217,7 @@ CREATE TABLE IF NOT EXISTS public.campaigns (
   message         TEXT NOT NULL,
   target_segment  TEXT NOT NULL,
   scheduled_at    TIMESTAMPTZ,
+  sent_at         TIMESTAMPTZ,
   sent_count      INTEGER NOT NULL DEFAULT 0,
   status          TEXT NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'scheduled', 'sending', 'sent', 'cancelled')),
@@ -313,9 +315,9 @@ CREATE POLICY "shop_groups_select_public"
   ON public.shop_groups FOR SELECT
   USING (true);
 
-CREATE POLICY "shop_groups_insert_owner"
+CREATE POLICY "shop_groups_insert_super_admin"
   ON public.shop_groups FOR INSERT
-  WITH CHECK (auth.uid() = owner_user_id);
+  WITH CHECK (public.is_super_admin());
 
 CREATE POLICY "shop_groups_update_owner"
   ON public.shop_groups FOR UPDATE
@@ -414,7 +416,12 @@ CREATE POLICY "customer_profiles_select_own"
 
 CREATE POLICY "customer_profiles_insert"
   ON public.customer_profiles FOR INSERT
-  WITH CHECK (true);  -- Le trigger s'en charge automatiquement
+  WITH CHECK (
+    -- Trigger fn_link_customer_profile (SECURITY DEFINER) gère les inserts automatiques
+    -- Inserts directs réservés aux admins
+    public.is_super_admin()
+    OR EXISTS (SELECT 1 FROM public.shop_admins WHERE user_id = auth.uid())
+  );
 
 CREATE POLICY "customer_profiles_update"
   ON public.customer_profiles FOR UPDATE
@@ -587,5 +594,74 @@ CREATE POLICY "super_admins_delete"
 
 
 -- ╔══════════════════════════════════════════╗
--- ║  FIN DU SCHÉMA — Phase 1 Infrastructure ║
+-- ║  TABLE AUXILIAIRE : rate_limit_attempts  ║
+-- ║  Rate limiting login (brute-force)       ║
+-- ╚══════════════════════════════════════════╝
+
+CREATE TABLE IF NOT EXISTS public.rate_limit_attempts (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  identifier   TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  success      BOOLEAN NOT NULL DEFAULT false
+);
+
+ALTER TABLE public.rate_limit_attempts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "rate_limit_service_only"
+  ON public.rate_limit_attempts
+  USING (false);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_identifier_action
+  ON public.rate_limit_attempts(identifier, action, attempted_at DESC);
+
+CREATE OR REPLACE FUNCTION public.fn_cleanup_rate_limit_attempts()
+RETURNS TRIGGER AS $$
+BEGIN
+  DELETE FROM public.rate_limit_attempts WHERE attempted_at < now() - INTERVAL '24 hours';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER trg_cleanup_rate_limit
+  AFTER INSERT ON public.rate_limit_attempts
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.fn_cleanup_rate_limit_attempts();
+
+CREATE OR REPLACE FUNCTION public.check_rate_limit(
+  p_identifier     TEXT,
+  p_action         TEXT,
+  p_max_attempts   INTEGER DEFAULT 5,
+  p_window_seconds INTEGER DEFAULT 300
+)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO v_count
+  FROM public.rate_limit_attempts
+  WHERE identifier = p_identifier AND action = p_action
+    AND success = false
+    AND attempted_at > now() - (p_window_seconds || ' seconds')::INTERVAL;
+
+  INSERT INTO public.rate_limit_attempts (identifier, action, success)
+  VALUES (p_identifier, p_action, false);
+
+  RETURN v_count < p_max_attempts;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reset_rate_limit(p_identifier TEXT, p_action TEXT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  DELETE FROM public.rate_limit_attempts
+  WHERE identifier = p_identifier AND action = p_action AND success = false;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.check_rate_limit TO service_role;
+GRANT EXECUTE ON FUNCTION public.reset_rate_limit TO service_role;
+
+
+-- ╔══════════════════════════════════════════╗
+-- ║  FIN DU SCHÉMA                           ║
 -- ╚══════════════════════════════════════════╝

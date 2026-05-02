@@ -1,35 +1,40 @@
 /**
  * FIDELYS — Edge Function: birthday-bonus
  * Cron job quotidien (07h UTC) : notification d'anniversaire aux clients
+ * SÉCURITÉ: Appelée uniquement par pg_cron (service_role key requise)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 serve(async (req: Request) => {
-  // Handle CORS preflight
+  const internalHeaders = { 'Content-Type': 'application/json' };
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { status: 204 });
   }
 
   try {
-    // Only accept POST
     if (req.method !== 'POST') {
-      throw new Error('Méthode non autorisée');
+      return new Response(JSON.stringify({ error: 'Méthode non autorisée' }), { status: 405, headers: internalHeaders });
     }
 
-    // Initialiser Supabase Admin Client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    // ── SÉCURITÉ P0: Uniquement callable par pg_cron (service_role key) ────────
+    const authHeader = req.headers.get('Authorization');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    if (!authHeader || authHeader !== `Bearer ${supabaseServiceKey}`) {
+      return new Response(JSON.stringify({ error: 'Réservé à un usage interne' }), {
+        status: 403,
+        headers: internalHeaders,
+      });
+    }
+    // ── FIN SÉCURITÉ ──────────────────────────────────────────────────────────
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Sélectionner les clients dont c'est l'anniversaire aujourd'hui
-    // On compare mois et jour uniquement (ignore l'année)
+    // 1. Sélectionner les clients avec un profil (potentiel anniversaire)
     const { data: customers, error: customersError } = await supabase
       .from('customers')
       .select('id, shop_id, profile_id, first_name')
@@ -42,16 +47,18 @@ serve(async (req: Request) => {
     if (!customers || customers.length === 0) {
       return new Response(
         JSON.stringify({ total_checked: 0, total_sent: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        { headers: internalHeaders, status: 200 }
       );
     }
 
     // Filtrer les clients dont l'anniversaire est aujourd'hui
     const today = new Date();
-    const currentMonth = today.getMonth() + 1; // getMonth() retourne 0-11
+    const currentMonth = today.getMonth() + 1;
     const currentDay = today.getDate();
 
-    const profileIds = customers.map(c => c.profile_id);
+    type CustomerRow = { id: string; shop_id: string; profile_id: string | null; first_name: string | null };
+    const typedCustomers = customers as CustomerRow[];
+    const profileIds = typedCustomers.map((c: CustomerRow) => c.profile_id);
 
     const { data: profiles, error: profilesError } = await supabase
       .from('customer_profiles')
@@ -62,43 +69,36 @@ serve(async (req: Request) => {
       throw new Error('Erreur lors de la récupération des profils');
     }
 
-    // Mapper les birthdays aux customers
     const birthdayMap = new Map<string, Date>();
     if (profiles) {
-      for (const profile of profiles) {
+      for (const profile of profiles as { id: string; birthday: string | null }[]) {
         if (profile.birthday) {
           birthdayMap.set(profile.id, new Date(profile.birthday));
         }
       }
     }
 
-    const birthdayCustomers = customers.filter(customer => {
+    const birthdayCustomers = typedCustomers.filter((customer: CustomerRow) => {
       const birthday = birthdayMap.get(customer.profile_id!);
       if (!birthday) return false;
-
-      const birthMonth = birthday.getMonth() + 1;
-      const birthDay = birthday.getDate();
-
-      return birthMonth === currentMonth && birthDay === currentDay;
+      return (birthday.getMonth() + 1) === currentMonth && birthday.getDate() === currentDay;
     });
 
     if (birthdayCustomers.length === 0) {
       return new Response(
         JSON.stringify({ total_checked: customers.length, total_sent: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        { headers: internalHeaders, status: 200 }
       );
     }
 
     // 2. Envoyer les notifications d'anniversaire
     const notificationUrl = `${supabaseUrl}/functions/v1/send-notification`;
-
     let totalSent = 0;
     let totalFailed = 0;
 
-    for (const customer of birthdayCustomers) {
+    for (const customer of birthdayCustomers as CustomerRow[]) {
       const { id: customer_id, shop_id, first_name } = customer;
 
-      // Récupérer le nom de la boutique
       const { data: shop } = await supabase
         .from('shops')
         .select('name')
@@ -106,11 +106,8 @@ serve(async (req: Request) => {
         .single();
 
       const shopName = shop?.name || 'notre boutique';
-
-      // Personnaliser le message avec le prénom si disponible
       const customerName = first_name || '';
 
-      // 3. Envoyer la notification d'anniversaire
       try {
         const response = await fetch(notificationUrl, {
           method: 'POST',
@@ -148,13 +145,13 @@ serve(async (req: Request) => {
         total_sent: totalSent,
         total_failed: totalFailed,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      { headers: internalHeaders, status: 200 }
     );
   } catch (error) {
-    console.error('birthday-bonus error:', error);
+    console.error('birthday-bonus error:', error instanceof Error ? error.message : 'unknown');
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erreur serveur' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      { headers: internalHeaders, status: 400 }
     );
   }
 });

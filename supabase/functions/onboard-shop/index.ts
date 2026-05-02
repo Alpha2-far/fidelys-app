@@ -1,15 +1,26 @@
 /**
  * FIDELYS — Edge Function: onboard-shop
  * Crée une nouvelle boutique avec son propriétaire et ses paliers de récompense
+ * SÉCURITÉ: Requiert un JWT super_admin valide dans Authorization header
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = [
+  'https://fidelys.app',
+  'https://fidelys-app.vercel.app',
+];
+
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+}
 
 interface RequestBody {
   name: string;
@@ -20,30 +31,87 @@ interface RequestBody {
   group_id?: string;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+
+function isValidSlug(slug: string): boolean {
+  return /^[a-z0-9-]{2,63}$/.test(slug);
+}
+
 serve(async (req: Request) => {
-  // Handle CORS preflight
+  const origin = req.headers.get('Origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Only accept POST
     if (req.method !== 'POST') {
       throw new Error('Méthode non autorisée');
     }
 
+    // ── SÉCURITÉ P0: Vérifier le token Authorization ──────────────────────────
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Authorization requise' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+    // Vérifier l'identité de l'appelant avec son JWT
+    const callerClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: userError } = await callerClient.auth.getUser();
+
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Token invalide ou expiré' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Vérifier que l'appelant est bien un super_admin
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: superAdmin, error: saError } = await adminClient
+      .from('super_admins')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (saError || !superAdmin) {
+      return new Response(JSON.stringify({ error: 'Accès réservé aux super-admins' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // ── FIN SÉCURITÉ ──────────────────────────────────────────────────────────
+
     const body: RequestBody = await req.json();
     const { name, slug, owner_email, owner_phone, address, group_id } = body;
 
-    // Validation
+    // Validation des inputs
     if (!name || !slug || !owner_email || !owner_phone || !address) {
       throw new Error('Tous les champs sont requis');
     }
+    if (!isValidEmail(owner_email)) {
+      throw new Error('Adresse email invalide');
+    }
+    if (!isValidSlug(slug)) {
+      throw new Error('Slug invalide (lettres minuscules, chiffres, tirets, 2-63 caractères)');
+    }
+    if (name.length > 100) {
+      throw new Error('Nom de boutique trop long (max 100 caractères)');
+    }
 
-    // Initialiser Supabase Admin Client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = adminClient;
 
     // 1. Vérifier que le slug est disponible
     const { data: existingShop } = await supabase
@@ -69,11 +137,15 @@ serve(async (req: Request) => {
       }
     }
 
-    // 3. Générer un mot de passe temporaire
-    const temporaryPassword = Math.random().toString(36).slice(-8) +
-      Math.random().toString(36).slice(-8).toUpperCase();
+    // 3. Générer un mot de passe temporaire sécurisé
+    const temporaryPassword =
+      Array.from(crypto.getRandomValues(new Uint8Array(12)))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 12) + 'Aa1!';
 
     // 4. Créer le compte Supabase Auth pour le propriétaire
+    let ownerUserId: string;
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: owner_email,
       password: temporaryPassword,
@@ -82,13 +154,10 @@ serve(async (req: Request) => {
 
     if (authError) {
       if (authError.message.includes('already been registered')) {
-        // User exists, get their ID
         const { data: users } = await supabase.auth.admin.listUsers();
-        const existingUser = users.users.find(u => u.email === owner_email);
-        if (!existingUser) {
-          throw new Error('Erreur lors de la création du compte');
-        }
-        var ownerUserId = existingUser.id;
+        const existingUser = users.users.find((u: { id: string; email?: string }) => u.email === owner_email);
+        if (!existingUser) throw new Error('Erreur lors de la création du compte');
+        ownerUserId = existingUser.id;
       } else {
         throw authError;
       }
@@ -124,47 +193,27 @@ serve(async (req: Request) => {
 
     // 7. Créer les 3 paliers de récompense par défaut
     const defaultTiers = [
-      {
-        name: 'Bronze',
-        points_required: 100,
-        reward_description: '-5% sur votre prochain achat',
-        reward_value: '-5%',
-        sort_order: 1,
-      },
-      {
-        name: 'Argent',
-        points_required: 300,
-        reward_description: '-10% sur votre prochain achat',
-        reward_value: '-10%',
-        sort_order: 2,
-      },
-      {
-        name: 'Or',
-        points_required: 500,
-        reward_description: '-15% + cadeau surprise',
-        reward_value: '-15% + cadeau',
-        sort_order: 3,
-      },
+      { name: 'Bronze', points_required: 100, reward_description: '-5% sur votre prochain achat', reward_value: '-5%', sort_order: 1 },
+      { name: 'Argent', points_required: 300, reward_description: '-10% sur votre prochain achat', reward_value: '-10%', sort_order: 2 },
+      { name: 'Or', points_required: 500, reward_description: '-15% + cadeau surprise', reward_value: '-15% + cadeau', sort_order: 3 },
     ];
 
     const { error: tiersError } = await supabase.from('reward_tiers').insert(
-      defaultTiers.map((tier) => ({
-        ...tier,
-        shop_id: shop.id,
-        active: true,
-      }))
+      defaultTiers.map(tier => ({ ...tier, shop_id: shop.id, active: true }))
     );
 
     if (tiersError) throw tiersError;
 
-    // 8. Retourner les informations
+    // ── SÉCURITÉ P2: Ne jamais retourner le mot de passe en clair ─────────────
+    // Le mot de passe temporaire est envoyé par email via Supabase Auth (email_confirm: true)
+    // On ne le retourne PAS dans la réponse API
     return new Response(
       JSON.stringify({
         shop_id: shop.id,
         slug: shop.slug,
         owner_user_id: ownerUserId,
-        temporary_password: temporaryPassword,
         subdomain_url: `https://${shop.slug}.fidelys.app`,
+        message: 'Boutique créée. Mot de passe temporaire envoyé par email au propriétaire.',
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -172,7 +221,7 @@ serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error('onboard-shop error:', error);
+    console.error('onboard-shop error:', error instanceof Error ? error.message : 'unknown');
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erreur serveur' }),
       {

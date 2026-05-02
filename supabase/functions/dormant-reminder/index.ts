@@ -1,48 +1,64 @@
 /**
  * FIDELYS — Edge Function: dormant-reminder
  * Cron job quotidien (09h UTC) : rappel aux clients inactifs depuis 30+ jours
+ * SÉCURITÉ: Appelée uniquement par pg_cron (service_role key requise)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 serve(async (req: Request) => {
-  // Handle CORS preflight
+  const internalHeaders = { 'Content-Type': 'application/json' };
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { status: 204 });
   }
 
   try {
-    // Only accept POST
     if (req.method !== 'POST') {
-      throw new Error('Méthode non autorisée');
+      return new Response(JSON.stringify({ error: 'Méthode non autorisée' }), { status: 405, headers: internalHeaders });
     }
 
-    // Initialiser Supabase Admin Client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    // ── SÉCURITÉ P0: Uniquement callable par pg_cron (service_role key) ────────
+    const authHeader = req.headers.get('Authorization');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    if (!authHeader || authHeader !== `Bearer ${supabaseServiceKey}`) {
+      return new Response(JSON.stringify({ error: 'Réservé à un usage interne' }), {
+        status: 403,
+        headers: internalHeaders,
+      });
+    }
+    // ── FIN SÉCURITÉ ──────────────────────────────────────────────────────────
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Sélectionner les clients inactifs depuis 30+ jours
-    // Exclure ceux qui ont déjà reçu un dormant_reminder dans les 30 derniers jours
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const { data: customers, error: customersError } = await supabase
+    // ── VULN-010 FIX: PostgREST ne supporte pas les subqueries — deux étapes ───
+    // Étape 1: récupérer les customer_id déjà relancés dans les 30 derniers jours
+    const { data: recentlyNotified } = await supabase
+      .from('notifications')
+      .select('customer_id')
+      .eq('type', 'dormant_reminder')
+      .gte('sent_at', thirtyDaysAgo.toISOString());
+
+    const excludedIds = (recentlyNotified as { customer_id: string }[] | null)?.map(n => n.customer_id) ?? [];
+
+    // Étape 2: clients inactifs depuis 30+ jours, hors ceux déjà relancés
+    let query = supabase
       .from('customers')
-      .select('id, shop_id, first_name, last_name, phone')
-      .lt('last_visit_at', thirtyDaysAgo.toISOString())
-      .not('id', 'in', supabase
-        .from('notifications')
-        .select('customer_id')
-        .eq('type', 'dormant_reminder')
-        .gte('sent_at', thirtyDaysAgo.toISOString())
-      );
+      .select('id, shop_id, first_name')
+      .lt('last_visit_at', thirtyDaysAgo.toISOString());
+
+    if (excludedIds.length > 0) {
+      query = query.not('id', 'in', `(${excludedIds.map(id => `"${id}"`).join(',')})`);
+    }
+
+    const { data: customers, error: customersError } = await query;
+    // ── FIN FIX ───────────────────────────────────────────────────────────────
 
     if (customersError) {
       throw new Error('Erreur lors de la récupération des clients inactifs');
@@ -51,20 +67,18 @@ serve(async (req: Request) => {
     if (!customers || customers.length === 0) {
       return new Response(
         JSON.stringify({ total_checked: 0, total_sent: 0, total_skipped: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        { headers: internalHeaders, status: 200 }
       );
     }
 
     // 2. Envoyer les notifications de rappel
     const notificationUrl = `${supabaseUrl}/functions/v1/send-notification`;
-
     let totalSent = 0;
     let totalFailed = 0;
 
-    for (const customer of customers) {
+    for (const customer of customers as { id: string; shop_id: string; first_name: string | null }[]) {
       const { id: customer_id, shop_id, first_name } = customer;
 
-      // Récupérer le nom de la boutique
       const { data: shop } = await supabase
         .from('shops')
         .select('name')
@@ -72,11 +86,8 @@ serve(async (req: Request) => {
         .single();
 
       const shopName = shop?.name || 'notre boutique';
-
-      // Personnaliser le message avec le prénom si disponible
       const customerName = first_name || 'cher client';
 
-      // 3. Envoyer la notification de rappel
       try {
         const response = await fetch(notificationUrl, {
           method: 'POST',
@@ -113,13 +124,13 @@ serve(async (req: Request) => {
         total_sent: totalSent,
         total_failed: totalFailed,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      { headers: internalHeaders, status: 200 }
     );
   } catch (error) {
-    console.error('dormant-reminder error:', error);
+    console.error('dormant-reminder error:', error instanceof Error ? error.message : 'unknown');
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erreur serveur' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      { headers: internalHeaders, status: 400 }
     );
   }
 });

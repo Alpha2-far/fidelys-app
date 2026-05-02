@@ -1,31 +1,37 @@
 /**
  * FIDELYS — Edge Function: scheduled-campaigns
  * Invoquée par pg_cron chaque minute pour envoyer les campagnes programmées
+ * SÉCURITÉ: Appelée uniquement par pg_cron (service_role key requise)
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 serve(async (req: Request) => {
-  // Handle CORS preflight
+  const internalHeaders = { 'Content-Type': 'application/json' };
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { status: 204 });
   }
 
   try {
-    // Only accept POST (appel interne depuis pg_cron)
     if (req.method !== 'POST') {
-      throw new Error('Méthode non autorisée');
+      return new Response(JSON.stringify({ error: 'Méthode non autorisée' }), { status: 405, headers: internalHeaders });
     }
 
-    // Initialiser Supabase Admin Client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    // ── SÉCURITÉ P0: Uniquement callable par pg_cron (service_role key) ────────
+    const authHeader = req.headers.get('Authorization');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    if (!authHeader || authHeader !== `Bearer ${supabaseServiceKey}`) {
+      return new Response(JSON.stringify({ error: 'Réservé à un usage interne' }), {
+        status: 403,
+        headers: internalHeaders,
+      });
+    }
+    // ── FIN SÉCURITÉ ──────────────────────────────────────────────────────────
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1. Trouver les campagnes à envoyer
@@ -42,27 +48,23 @@ serve(async (req: Request) => {
     if (!campaigns || campaigns.length === 0) {
       return new Response(
         JSON.stringify({ processed: 0, message: 'Aucune campagne à envoyer' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        { headers: internalHeaders, status: 200 }
       );
     }
 
-    // 2. Envoyer chaque campagne
+    // 2. Envoyer chaque campagne via send-campaign (appel interne avec service_role)
     let processed = 0;
-    const functionsUrl = Deno.env.get('SUPABASE_FUNCTIONS_URL') ?? supabaseUrl.replace('/rest/v1', '/functions/v1');
+    const functionsUrl = `${supabaseUrl.replace('/rest/v1', '')}/functions/v1`;
 
-    for (const campaign of campaigns) {
+    for (const campaign of campaigns as { id: string; shop_id: string }[]) {
       try {
-        // Appeler send-campaign pour chaque campagne
         const response = await fetch(`${functionsUrl}/send-campaign`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${supabaseServiceKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            campaign_id: campaign.id,
-            shop_id: campaign.shop_id,
-          }),
+          body: JSON.stringify({ campaign_id: campaign.id }),
         });
 
         if (!response.ok) {
@@ -81,15 +83,15 @@ serve(async (req: Request) => {
       JSON.stringify({
         processed,
         total: campaigns.length,
-        message: `${processed}/${campaigns.length} campagnes traitées`
+        message: `${processed}/${campaigns.length} campagnes traitées`,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      { headers: internalHeaders, status: 200 }
     );
   } catch (error) {
-    console.error('scheduled-campaigns error:', error);
+    console.error('scheduled-campaigns error:', error instanceof Error ? error.message : 'unknown');
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erreur serveur' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      { headers: internalHeaders, status: 400 }
     );
   }
 });
